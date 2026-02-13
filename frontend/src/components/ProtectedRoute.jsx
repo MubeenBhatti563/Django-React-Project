@@ -7,37 +7,34 @@ import { useEffect, useState } from "react";
 const ProtectedRoute = ({ children }) => {
   const [isAuthorized, setIsAuthorized] = useState(null);
 
-  useEffect(() => {
-    auth().catch(() => setIsAuthorized(false));
-  }, [auth]);
-
+  // 1. Define functions at the top to avoid Hoisting errors
   const refreshToken = async () => {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN);
+    const refresh = localStorage.getItem(REFRESH_TOKEN);
     try {
-      const res = api.post("/api/token/refresh", {
-        refreshToken: refreshToken,
+      const res = await api.post("/api/token/refresh/", {
+        refresh: refresh,
       });
       if (res.status === 200) {
-        localStorage.setItem(REFRESH_TOKEN, res.data.access);
+        localStorage.setItem(ACCESS_TOKEN, res.data.access);
         setIsAuthorized(true);
+      } else {
+        setIsAuthorized(false);
       }
-    } catch (err) {
-      console.error(err.message);
+    } catch (error) {
+      console.error(error);
       setIsAuthorized(false);
     }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const auth = async () => {
     const token = localStorage.getItem(ACCESS_TOKEN);
     if (!token) {
       setIsAuthorized(false);
       return;
     }
-
     const decoded = jwtDecode(token);
     const tokenExpiration = decoded.exp;
-    const now = Date().now / 1000;
+    const now = Date.now() / 1000;
 
     if (tokenExpiration < now) {
       await refreshToken();
@@ -46,9 +43,28 @@ const ProtectedRoute = ({ children }) => {
     }
   };
 
+  useEffect(() => {
+    let isMounted = true; // Cleanup flag to prevent memory leaks
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    auth()
+      .then(() => {
+        if (!isMounted) return;
+      })
+      .catch(() => {
+        if (isMounted) setIsAuthorized(false);
+      });
+
+    return () => {
+      isMounted = false;
+    }; // Cleanup
+  }, []);
+
+  // 3. Conditional Rendering
   if (isAuthorized === null) {
     return <div>Loading...</div>;
   }
+
   return isAuthorized ? children : <Navigate to="/login" />;
 };
 
